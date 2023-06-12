@@ -36,6 +36,7 @@ def validate_epoch(ldm,
         ind_layers = -1*torch.ones_like(mini_batch['src_kps']).repeat(len(layers), 1, 1)
             
         all_contexts = []
+        all_sub_contexts = []
 
         for j in range(mini_batch['src_kps'].shape[2]):
             
@@ -48,10 +49,14 @@ def validate_epoch(ldm,
         
             # Find the text embeddings for the source point
             contexts = []
+            _contexts = []
+            
             for _ in range(num_opt_iterations):
-                context = optimize_prompt(ldm, mini_batch['src_img'][0], mini_batch['src_kps'][0, :, j]/512, num_steps=num_steps, device=device, layers=layers, lr = lr, upsample_res=upsample_res, noise_level=noise_level, sigma = sigma, flip_prob=flip_prob, crop_percent=crop_percent)
+                context, _context = optimize_prompt(ldm, mini_batch['src_img'][0], mini_batch['src_kps'][0, :, j]/512, num_steps=num_steps, device=device, layers=layers, lr = lr, upsample_res=upsample_res, noise_level=noise_level, sigma = sigma, flip_prob=flip_prob, crop_percent=crop_percent)
                 contexts.append(context)
+                _contexts.append(torch.stack(_context))
             all_contexts.append(torch.stack(contexts))
+            all_sub_contexts.append(torch.stack(_contexts))
             
             # Find and combine the attention maps over the multiple found text embeddings and crops
             all_maps = []
@@ -115,10 +120,13 @@ def validate_epoch(ldm,
         if visualize:
             visualie_correspondences(mini_batch['src_img'][0], mini_batch['trg_img'][0], mini_batch['src_kps'], est_keypoints, f"correspondences_estimated_{i:03d}", correct_ids = eval_result['correct_ids'], save_folder=save_folder)
             visualie_correspondences(mini_batch['src_img'][0], mini_batch['trg_img'][0], mini_batch['src_kps'], mini_batch['trg_kps'], f"correspondences_gt_{i:03d}", correct_ids = eval_result['correct_ids'], save_folder=save_folder)
-            
-        dict = {"est_keypoints": est_keypoints, "correct_ids": eval_result['correct_ids'], "src_kps": mini_batch['src_kps'], "trg_kps": mini_batch['trg_kps'], "idx": mini_batch['idx'] if item_index == -1 else item_index, "contexts": torch.stack(all_contexts), 'pck': eval_result['pck']}
-        # save dict 
-        torch.save(dict, f"{save_folder}/correspondence_data_{i:03d}.pt")
+        
+        all_sub_contexts = torch.stack(all_sub_contexts)
+        
+        for j in range(all_sub_contexts.shape[2]):
+            dict = {"est_keypoints": est_keypoints, "correct_ids": eval_result['correct_ids'], "src_kps": mini_batch['src_kps'], "trg_kps": mini_batch['trg_kps'], "idx": mini_batch['idx'] if item_index == -1 else item_index, "contexts": all_sub_contexts[:, :, j], 'pck': eval_result['pck']}
+            # save dict 
+            torch.save(dict, f"{save_folder}/correspondence_data_{i:03d}_{j:03d}.pt")
 
         pck_array += eval_result['pck']
 
@@ -162,7 +170,7 @@ def retest(ldm,
     
     from glob import glob
     
-    correspondences = glob(f"{results_loc}/*/correspondence_data_*.pt")
+    correspondences = sorted(glob(f"{results_loc}/correspondence_data_*.pt"))
     
     if item_index != -1:
         correspondences = [correspondences[item_index]]
@@ -174,7 +182,10 @@ def retest(ldm,
     # for i, correspondence in enumerate(correspondences):
     for _i in range(len(correspondences)):
         
-        i = int(correspondences[_i].split("/")[-2])
+        # if _i != 0 and _i != 129:
+        #     continue
+        
+        i = 0
         
         data = torch.load(correspondences[_i], map_location=device)
         
@@ -200,8 +211,8 @@ def retest(ldm,
             assert mini_batch['src_kps'][0, j] != -1
             
             if visualize:
-                visualize_image_with_points(mini_batch['src_img'], mini_batch['src_kps'][:, j], f"{index:03d}_initial_point_{j:02d}", save_folder=save_folder)
-                visualize_image_with_points(mini_batch['trg_img'], mini_batch['trg_kps'][0, :, j], f"{index:03d}_target_point_{j:02d}", save_folder=save_folder)
+                visualize_image_with_points(mini_batch['src_img'], mini_batch['src_kps'][:, j], f"{index:03d}_initial_point_{j:02d}", save_folder=save_folder, point_size=0)
+                visualize_image_with_points(mini_batch['trg_img'], mini_batch['trg_kps'][0, :, j], f"{index:03d}_target_point_{j:02d}", save_folder=save_folder, point_size=0)
             
             all_maps = []
             
@@ -255,8 +266,8 @@ def retest(ldm,
             
             if visualize:
                 for k in range(all_maps.shape[0]):
-                    visualize_image_with_points(all_maps[k, None], mini_batch['trg_kps'][0, :, j]/512*upsample_res, f"{index:03d}_largest_loc_trg_{j:02d}_{k:02d}", save_folder=save_folder)
-                visualize_image_with_points(torch.mean(all_maps, dim=0)[None], None, f"{index:03d}_largest_loc_trg_{j:02d}_mean", save_folder=save_folder)
+                    visualize_image_with_points(all_maps[k, None], mini_batch['trg_kps'][0, :, j]/512*upsample_res, f"{index:03d}_largest_loc_trg_{j:02d}_{k:02d}", save_folder=save_folder, point_size=0)
+                visualize_image_with_points(torch.mean(all_maps, dim=0)[None], None, f"{index:03d}_largest_loc_trg_{j:02d}_mean", save_folder=save_folder, point_size=0)
                 
                 
             all_maps = torch.mean(all_maps, dim=0)
@@ -289,8 +300,8 @@ def retest(ldm,
                         
                         
                 for k in range(all_maps.shape[0]):  
-                    visualize_image_with_points(all_maps[k, None], mini_batch['src_kps'][:, j]/512*upsample_res, f"{index:03d}_largest_loc_src_{j:02d}_{k:02d}", save_folder=save_folder)
-                visualize_image_with_points(torch.mean(all_maps, dim=0)[None], None, f"{index:03d}_largest_loc_src_{j:02d}_mean", save_folder=save_folder)
+                    visualize_image_with_points(all_maps[k, None], mini_batch['src_kps'][:, j]/512*upsample_res, f"{index:03d}_largest_loc_src_{j:02d}_{k:02d}", save_folder=save_folder, point_size=0)
+                visualize_image_with_points(torch.mean(all_maps, dim=0)[None], None, f"{index:03d}_largest_loc_src_{j:02d}_mean", save_folder=save_folder, point_size=0)
                 
         ind_layers_results = []
             

@@ -376,7 +376,7 @@ def find_max_pixel_value(tens, img_size=512, ignore_border = True):
     
     return max_pixel
 
-def visualize_image_with_points(image, point, name, save_folder = "outputs"):
+def visualize_image_with_points(image, point, name, save_folder = "outputs", point_size=20):
     
     """The point is in pixel numbers
     """
@@ -488,6 +488,8 @@ def optimize_prompt(ldm, image, pixel_loc, context=None, device="cuda", num_step
     import time
     start = time.time()
     
+    all_iterations = [context.cpu().detach()]
+    
     for iteration in range(num_steps):
         
         with torch.no_grad():
@@ -537,7 +539,9 @@ def optimize_prompt(ldm, image, pixel_loc, context=None, device="cuda", num_step
         optimizer.step()
         optimizer.zero_grad()
         
+        all_iterations.append(context.cpu().detach())
+        
     print(f"optimization took {time.time() - start} seconds")
         
-    return context
+    return context, all_iterations
 
