@@ -135,7 +135,6 @@ def validate_epoch(ldm,
     return pck_array
 
 
-
 def retest(ldm,
             test_dataset,
             upsample_res = 512,
