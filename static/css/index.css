@@ -55,6 +55,12 @@ body {
     font-family: 'Google Sans', sans-serif;
 }
 
+.neurips-acceptance-notice {
+  font-weight: bold;
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
 .publication-venue {
     color: #555;
     width: fit-content;
